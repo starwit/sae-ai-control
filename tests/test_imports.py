@@ -2,8 +2,8 @@ import pytest
 
 def test_rediswriter_import():
     try:
-        from mystage.mystage import MyStage
+        from detectionselector.detectionselector import DetectionSelector
     except ImportError as e:
-        pytest.fail(f"Failed to import MyStage: {e}")
+        pytest.fail(f"Failed to import DetectionSelector: {e}")
 
-    assert MyStage is not None, "MyStage should be imported successfully"
+    assert DetectionSelector is not None, "DetectionSelector should be imported successfully"
