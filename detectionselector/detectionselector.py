@@ -58,7 +58,10 @@ class DetectionSelector:
                     break
                 width = detection.bounding_box.max_x - detection.bounding_box.min_x
                 height = detection.bounding_box.max_y - detection.bounding_box.min_y
-                if width < self.config.min_width or height < self.config.min_height:
+                if width < self.config.min_width:
+                    send_msg = True
+                    break
+                if height < self.config.min_height:
                     send_msg = True
                     break
             if (sae_msg.detections is not None and len(sae_msg.detections) > self.config.max_detections):
