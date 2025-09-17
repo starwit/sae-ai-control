@@ -34,7 +34,7 @@ class DetectionSelector:
         sae_msg = self._unpack_proto(input_proto)
 
         # Your implementation goes (mostly) here
-        logger.warning('Received SAE message from pipeline')
+        logger.debug('Received SAE message from pipeline')
         self._filter_message(sae_msg)
         return self._pack_proto(sae_msg)
         
