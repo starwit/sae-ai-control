@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock
-from detectionselector.detectionselector import DetectionSelector, DetectionSelectorConfig
+from sae_ai_control.detectionselector import DetectionSelector, DetectionSelectorConfig
 
 class DummyDetection:
     def __init__(self, confidence, min_x, max_x, min_y, max_y):
