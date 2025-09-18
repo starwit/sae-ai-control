@@ -35,8 +35,11 @@ class DetectionSelector:
 
         # Your implementation goes (mostly) here
         logger.debug('Received SAE message from pipeline')
-        self._filter_message(sae_msg)
-        return self._pack_proto(sae_msg)
+        sae_msg = self._filter_message(sae_msg)
+        if sae_msg is None:
+            return None
+        else:
+            return self._pack_proto(sae_msg)
         
     @PROTO_DESERIALIZATION_DURATION.time()
     def _unpack_proto(self, sae_message_bytes):
