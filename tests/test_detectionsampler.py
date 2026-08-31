@@ -140,10 +140,10 @@ def test_predicates_are_anded_per_detection():
 
     # A person and a low confidence detection, but not in the same detection
     mixed = make_msg([DummyDetection(confidence=0.9, class_id=PERSON), DummyDetection(confidence=0.2, class_id=CAR)])
-    assert sampler._filter_message(mixed) is None
+    assert sampler._filter_message(mixed) == (None, [])
 
     low_conf_person = make_msg([DummyDetection(confidence=0.3, class_id=PERSON)])
-    assert sampler._filter_message(low_conf_person) == low_conf_person
+    assert sampler._filter_message(low_conf_person) == (low_conf_person, ['low_conf_persons'])
 
 
 def test_filters_are_ored():
@@ -153,13 +153,16 @@ def test_filters_are_ored():
     )
 
     by_first = make_msg([DummyDetection(confidence=0.4, class_id=PERSON)])
-    assert sampler._filter_message(by_first) == by_first
+    assert sampler._filter_message(by_first) == (by_first, ['low_confidence'])
 
     by_second = make_msg([DummyDetection(confidence=0.9, class_id=CAR)])
-    assert sampler._filter_message(by_second) == by_second
+    assert sampler._filter_message(by_second) == (by_second, ['cars'])
+
+    by_both = make_msg([DummyDetection(confidence=0.4, class_id=CAR)])
+    assert sampler._filter_message(by_both) == (by_both, ['low_confidence', 'cars'])
 
     by_neither = make_msg([DummyDetection(confidence=0.9, class_id=PERSON)])
-    assert sampler._filter_message(by_neither) is None
+    assert sampler._filter_message(by_neither) == (None, [])
 
 
 def test_cooldown_suppresses_the_same_filter():
@@ -170,10 +173,10 @@ def test_cooldown_suppresses_the_same_filter():
     during_cooldown = make_msg([detection], timestamp=10_999)
     after_cooldown = make_msg([detection], timestamp=11_000)
 
-    assert sampler._filter_message(first) == first
-    assert sampler._filter_message(during_cooldown) is None
+    assert sampler._filter_message(first) == (first, ['low_confidence'])
+    assert sampler._filter_message(during_cooldown) == (None, [])
     # The rejected frame did not restart the cooldown, so the boundary passes.
-    assert sampler._filter_message(after_cooldown) == after_cooldown
+    assert sampler._filter_message(after_cooldown) == (after_cooldown, ['low_confidence'])
 
 
 def test_cooldown_of_a_suppressed_filter_is_not_restarted_by_another_filter():
@@ -184,45 +187,45 @@ def test_cooldown_of_a_suppressed_filter_is_not_restarted_by_another_filter():
     car = DummyDetection(class_id=CAR)
     person = DummyDetection(class_id=PERSON)
 
-    assert sampler._filter_message(make_msg([car], timestamp=1_000)) is not None
+    assert sampler._filter_message(make_msg([car], timestamp=1_000))[0] is not None
 
     # Forwarded by 'persons' while 'cars' is still in cooldown
     both = make_msg([car, person], timestamp=5_000)
-    assert sampler._filter_message(both) == both
+    assert sampler._filter_message(both) == (both, ['persons'])
 
     # 'cars' is measured from its own last forward at 1_000, not from the one at 5_000
-    assert sampler._filter_message(make_msg([car], timestamp=11_000)) is not None
+    assert sampler._filter_message(make_msg([car], timestamp=11_000))[0] is not None
 
 
 def test_heartbeat_fires_without_any_detections():
     sampler = make_sampler({'name': 'cars', 'match_detection': {'class_id_in': [CAR]}}, heartbeat_interval='10s')
 
     # The first message is the heartbeat baseline
-    assert sampler._filter_message(make_msg([], timestamp=1_000)) is None
-    assert sampler._filter_message(make_msg([], timestamp=10_999)) is None
+    assert sampler._filter_message(make_msg([], timestamp=1_000)) == (None, [])
+    assert sampler._filter_message(make_msg([], timestamp=10_999)) == (None, [])
 
     heartbeat = make_msg([], timestamp=11_000)
-    assert sampler._filter_message(heartbeat) == heartbeat
+    assert sampler._filter_message(heartbeat) == (heartbeat, ['heartbeat'])
 
 
 def test_heartbeat_is_reset_by_a_forwarded_message():
     sampler = make_sampler({'name': 'cars', 'match_detection': {'class_id_in': [CAR]}}, heartbeat_interval='10s')
     car = DummyDetection(class_id=CAR)
 
-    assert sampler._filter_message(make_msg([], timestamp=1_000)) is None
+    assert sampler._filter_message(make_msg([], timestamp=1_000)) == (None, [])
 
     by_filter = make_msg([car], timestamp=6_000)
-    assert sampler._filter_message(by_filter) == by_filter
+    assert sampler._filter_message(by_filter) == (by_filter, ['cars'])
 
     # Heartbeat now measures from 6_000, not from 1_000
-    assert sampler._filter_message(make_msg([], timestamp=15_000)) is None
+    assert sampler._filter_message(make_msg([], timestamp=15_000)) == (None, [])
 
     heartbeat = make_msg([], timestamp=16_000)
-    assert sampler._filter_message(heartbeat) == heartbeat
+    assert sampler._filter_message(heartbeat) == (heartbeat, ['heartbeat'])
 
 
 def test_without_heartbeat_unmatched_messages_are_never_forwarded():
     sampler = make_sampler({'name': 'cars', 'match_detection': {'class_id_in': [CAR]}})
 
     for timestamp in (1_000, 10_000_000):
-        assert sampler._filter_message(make_msg([DummyDetection(class_id=PERSON)], timestamp=timestamp)) is None
+        assert sampler._filter_message(make_msg([DummyDetection(class_id=PERSON)], timestamp=timestamp)) == (None, [])

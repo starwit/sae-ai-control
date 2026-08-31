@@ -91,11 +91,10 @@ class DetectionSampler:
     def get(self, input_proto):
         sae_msg = self._unpack_proto(input_proto)
 
-        sae_msg = self._filter_message(sae_msg)
+        sae_msg, reasons = self._filter_message(sae_msg)
         if sae_msg is None:
             return None
-        else:
-            return self._pack_proto(sae_msg)
+        return self._pack_proto(sae_msg), reasons
 
     @PROTO_DESERIALIZATION_DURATION.time()
     def _unpack_proto(self, sae_message_bytes):
@@ -120,20 +119,22 @@ class DetectionSampler:
         ready = [f for f in matched if self._cooldown_elapsed(f, timestamp_ms)]
 
         if ready:
+            reasons = [f.name for f in ready]
             for filter_config in ready:
                 self._last_filter_forward_ms[filter_config.name] = timestamp_ms
                 FILTER_MATCH_COUNTER.labels(filter=filter_config.name).inc()
-            logger.debug(f'Forwarding message ({", ".join(f.name for f in ready)})')
+            logger.debug(f'Forwarding message ({", ".join(reasons)})')
         elif self._heartbeat_due(timestamp_ms):
+            reasons = [HEARTBEAT_LABEL]
             FILTER_MATCH_COUNTER.labels(filter=HEARTBEAT_LABEL).inc()
             logger.debug(f'Forwarding message ({HEARTBEAT_LABEL})')
         else:
-            return None
+            return None, []
 
         self._last_forward_ms = timestamp_ms
         OBJECT_COUNTER.inc(len(sae_msg.detections))
 
-        return sae_msg
+        return sae_msg, reasons
 
     def _cooldown_elapsed(self, filter_config: FilterConfig, timestamp_ms: int) -> bool:
         '''Suppressed frames do not restart the cooldown; measure from the last forwarded candidate.'''
