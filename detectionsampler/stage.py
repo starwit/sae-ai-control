@@ -57,12 +57,11 @@ def run_stage():
 
             FRAME_COUNTER.inc()
 
-            output = detection_sampler.get(proto_data)
+            output_proto_data = detection_sampler.get(proto_data)
 
-            if output is None:
+            if output_proto_data is None:
                 continue
-
-            output_proto_data, reasons = output
+            
             with REDIS_PUBLISH_DURATION.time():
-                for reason in reasons:
-                    publish(f'{CONFIG.redis.output_stream_prefix}:{stream_id}:{reason}', output_proto_data)
+                publish(f'{CONFIG.redis.output_stream_prefix}:{stream_id}', output_proto_data)
+            

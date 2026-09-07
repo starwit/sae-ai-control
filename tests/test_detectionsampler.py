@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock
 
 import pytest
+from visionapi.sae_pb2 import SaeMessage
 
 from detectionsampler.config import (DetectionPredicatesConfig,
                                      DetectionSamplerConfig, FilterConfig)
@@ -140,10 +141,10 @@ def test_predicates_are_anded_per_detection():
 
     # A person and a low confidence detection, but not in the same detection
     mixed = make_msg([DummyDetection(confidence=0.9, class_id=PERSON), DummyDetection(confidence=0.2, class_id=CAR)])
-    assert sampler._filter_message(mixed) == (None, [])
+    assert sampler._filter_message(mixed) is None
 
     low_conf_person = make_msg([DummyDetection(confidence=0.3, class_id=PERSON)])
-    assert sampler._filter_message(low_conf_person) == (low_conf_person, ['low_conf_persons'])
+    assert sampler._filter_message(low_conf_person) == low_conf_person
 
 
 def test_filters_are_ored():
@@ -153,16 +154,13 @@ def test_filters_are_ored():
     )
 
     by_first = make_msg([DummyDetection(confidence=0.4, class_id=PERSON)])
-    assert sampler._filter_message(by_first) == (by_first, ['low_confidence'])
+    assert sampler._filter_message(by_first) == by_first
 
     by_second = make_msg([DummyDetection(confidence=0.9, class_id=CAR)])
-    assert sampler._filter_message(by_second) == (by_second, ['cars'])
-
-    by_both = make_msg([DummyDetection(confidence=0.4, class_id=CAR)])
-    assert sampler._filter_message(by_both) == (by_both, ['low_confidence', 'cars'])
+    assert sampler._filter_message(by_second) == by_second
 
     by_neither = make_msg([DummyDetection(confidence=0.9, class_id=PERSON)])
-    assert sampler._filter_message(by_neither) == (None, [])
+    assert sampler._filter_message(by_neither) is None
 
 
 def test_cooldown_suppresses_the_same_filter():
@@ -173,10 +171,10 @@ def test_cooldown_suppresses_the_same_filter():
     during_cooldown = make_msg([detection], timestamp=10_999)
     after_cooldown = make_msg([detection], timestamp=11_000)
 
-    assert sampler._filter_message(first) == (first, ['low_confidence'])
-    assert sampler._filter_message(during_cooldown) == (None, [])
+    assert sampler._filter_message(first) == first
+    assert sampler._filter_message(during_cooldown) is None
     # The rejected frame did not restart the cooldown, so the boundary passes.
-    assert sampler._filter_message(after_cooldown) == (after_cooldown, ['low_confidence'])
+    assert sampler._filter_message(after_cooldown) == after_cooldown
 
 
 def test_cooldown_of_a_suppressed_filter_is_not_restarted_by_another_filter():
@@ -187,45 +185,64 @@ def test_cooldown_of_a_suppressed_filter_is_not_restarted_by_another_filter():
     car = DummyDetection(class_id=CAR)
     person = DummyDetection(class_id=PERSON)
 
-    assert sampler._filter_message(make_msg([car], timestamp=1_000))[0] is not None
+    assert sampler._filter_message(make_msg([car], timestamp=1_000)) is not None
 
     # Forwarded by 'persons' while 'cars' is still in cooldown
     both = make_msg([car, person], timestamp=5_000)
-    assert sampler._filter_message(both) == (both, ['persons'])
+    assert sampler._filter_message(both) == both
 
     # 'cars' is measured from its own last forward at 1_000, not from the one at 5_000
-    assert sampler._filter_message(make_msg([car], timestamp=11_000))[0] is not None
+    assert sampler._filter_message(make_msg([car], timestamp=11_000)) is not None
 
 
 def test_heartbeat_fires_without_any_detections():
     sampler = make_sampler({'name': 'cars', 'match_detection': {'class_id_in': [CAR]}}, heartbeat_interval='10s')
 
     # The first message is the heartbeat baseline
-    assert sampler._filter_message(make_msg([], timestamp=1_000)) == (None, [])
-    assert sampler._filter_message(make_msg([], timestamp=10_999)) == (None, [])
+    assert sampler._filter_message(make_msg([], timestamp=1_000)) is None
+    assert sampler._filter_message(make_msg([], timestamp=10_999)) is None
 
     heartbeat = make_msg([], timestamp=11_000)
-    assert sampler._filter_message(heartbeat) == (heartbeat, ['heartbeat'])
+    assert sampler._filter_message(heartbeat) == heartbeat
 
 
 def test_heartbeat_is_reset_by_a_forwarded_message():
     sampler = make_sampler({'name': 'cars', 'match_detection': {'class_id_in': [CAR]}}, heartbeat_interval='10s')
     car = DummyDetection(class_id=CAR)
 
-    assert sampler._filter_message(make_msg([], timestamp=1_000)) == (None, [])
+    assert sampler._filter_message(make_msg([], timestamp=1_000)) is None
 
     by_filter = make_msg([car], timestamp=6_000)
-    assert sampler._filter_message(by_filter) == (by_filter, ['cars'])
+    assert sampler._filter_message(by_filter) == by_filter
 
     # Heartbeat now measures from 6_000, not from 1_000
-    assert sampler._filter_message(make_msg([], timestamp=15_000)) == (None, [])
+    assert sampler._filter_message(make_msg([], timestamp=15_000)) is None
 
     heartbeat = make_msg([], timestamp=16_000)
-    assert sampler._filter_message(heartbeat) == (heartbeat, ['heartbeat'])
+    assert sampler._filter_message(heartbeat) == heartbeat
 
 
 def test_without_heartbeat_unmatched_messages_are_never_forwarded():
     sampler = make_sampler({'name': 'cars', 'match_detection': {'class_id_in': [CAR]}})
 
     for timestamp in (1_000, 10_000_000):
-        assert sampler._filter_message(make_msg([DummyDetection(class_id=PERSON)], timestamp=timestamp)) == (None, [])
+        assert sampler._filter_message(make_msg([DummyDetection(class_id=PERSON)], timestamp=timestamp)) is None
+
+
+def test_get_carries_one_reason_and_only_starts_the_selected_filters_cooldown():
+    sampler = make_sampler(
+        {'name': 'first_filter', 'cooldown': '30s', 'match_detection': {'confidence_below': 0.5}},
+        {'name': 'second_filter', 'cooldown': '30s', 'match_detection': {'confidence_below': 0.5}},
+        heartbeat_interval='10s',
+    )
+    message = SaeMessage()
+    message.frame.source_id = 'camera1'
+    message.detections.add(confidence=0.2)
+
+    for timestamp, reason in [(1_000, 'first_filter'), (2_000, 'second_filter'), (12_000, 'heartbeat')]:
+        message.frame.timestamp_utc_ms = timestamp
+        output = SaeMessage.FromString(sampler.get(message.SerializeToString()))
+
+        assert output.sampling_reason == reason
+        assert output.frame == message.frame
+        assert output.detections == message.detections
