@@ -52,6 +52,10 @@ Two optional timing settings limit the output:
 
 Both take a natural duration string: `1 day`, `5h`, `10 minutes`, `2h30m`, `1 day, 30 seconds`. Supported units are seconds, minutes, hours, days and weeks, each also as its usual abbreviation (`s`/`sec`, `m`/`min`, `h`/`hr`, `d`, `w`). All timing is measured in frame time (`frame.timestamp_utc_ms`), so the component behaves identically on a replayed stream.
 
+Each selected frame is published once to `<output_stream_prefix>:<input_stream_id>`.
+`SaeMessage.sampling_reason` contains the first matching filter whose cooldown has elapsed,
+or `heartbeat`. Filter order determines priority; only the selected filter's cooldown advances.
+
 Per filter, `detection_sampler_filter_match_counter{filter="<name>"}` counts how often that filter caused a message to be forwarded (label value `heartbeat` for the heartbeat), which is the intended way to tune the filters.
 
 ## Github Workflows and Versioning

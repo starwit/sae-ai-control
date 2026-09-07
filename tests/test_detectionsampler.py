@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock
 
 import pytest
+from visionapi.sae_pb2 import SaeMessage
 
 from detectionsampler.config import (DetectionPredicatesConfig,
                                      DetectionSamplerConfig, FilterConfig)
@@ -226,3 +227,22 @@ def test_without_heartbeat_unmatched_messages_are_never_forwarded():
 
     for timestamp in (1_000, 10_000_000):
         assert sampler._filter_message(make_msg([DummyDetection(class_id=PERSON)], timestamp=timestamp)) is None
+
+
+def test_get_carries_one_reason_and_only_starts_the_selected_filters_cooldown():
+    sampler = make_sampler(
+        {'name': 'first_filter', 'cooldown': '30s', 'match_detection': {'confidence_below': 0.5}},
+        {'name': 'second_filter', 'cooldown': '30s', 'match_detection': {'confidence_below': 0.5}},
+        heartbeat_interval='10s',
+    )
+    message = SaeMessage()
+    message.frame.source_id = 'camera1'
+    message.detections.add(confidence=0.2)
+
+    for timestamp, reason in [(1_000, 'first_filter'), (2_000, 'second_filter'), (12_000, 'heartbeat')]:
+        message.frame.timestamp_utc_ms = timestamp
+        output = SaeMessage.FromString(sampler.get(message.SerializeToString()))
+
+        assert output.sampling_reason == reason
+        assert output.frame == message.frame
+        assert output.detections == message.detections
